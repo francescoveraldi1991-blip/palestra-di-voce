@@ -1,0 +1,26 @@
+[theme]
+font = "IBM Plex Sans:https://fonts.googleapis.com/css2?family=IBM+Plex+Sans:wght@400;500;600&display=swap, sans-serif"
+headingFont = "Bricolage Grotesque:https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&display=swap, sans-serif"
+codeFont = "IBM Plex Mono:https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&display=swap, monospace"
+headingFontWeights = [800, 700, 700, 600, 600, 600]
+baseRadius = "0.6rem"
+buttonRadius = "0.5rem"
+showWidgetBorder = true
+
+[theme.light]
+primaryColor = "#2B45D4"
+backgroundColor = "#F3F5F9"
+secondaryBackgroundColor = "#E8ECF3"
+textColor = "#141B26"
+borderColor = "#D8DEE7"
+linkColor = "#2B45D4"
+chartCategoricalColors = ["#2B45D4", "#1C9764", "#D9702A", "#7A4FD0", "#C23B5A"]
+
+[theme.dark]
+primaryColor = "#7D90FF"
+backgroundColor = "#0E131B"
+secondaryBackgroundColor = "#1A2230"
+textColor = "#E7EBF1"
+borderColor = "#273244"
+linkColor = "#9AA9FF"
+chartCategoricalColors = ["#7D90FF", "#3CC48A", "#F09B5C", "#B49BFF", "#F07A92"]
