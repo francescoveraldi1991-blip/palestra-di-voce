@@ -64,6 +64,17 @@ canvas{display:block;width:100%;height:70px}
 .l-cur.syl{background:none;color:var(--stage-dim)}
 .l-cur .s.done{color:#7D90FF}
 .l-cur .s.now{color:var(--stage-ink);text-decoration:underline;text-decoration-color:#7D90FF;text-decoration-thickness:4px;text-underline-offset:6px}
+.left{display:flex;flex-direction:column;min-width:0}
+.midi{background:var(--stage);color:var(--stage-ink);border-radius:12px;padding:20px;display:flex;flex-direction:column;gap:14px;justify-content:center;min-height:240px}
+.midi .eyebrow{color:var(--stage-dim)}
+.midi .mt{font:800 24px var(--f-display);letter-spacing:-.02em}
+.midi .btn{background:transparent;color:var(--stage-ink);border-color:#3A4660}
+.midi .btn.primary{background:#7D90FF;border-color:#7D90FF;color:#0E131B}
+.midi select{font:600 14px var(--f-body);background:transparent;color:var(--stage-ink);border:1px solid #3A4660;border-radius:8px;padding:6px 8px}
+.midi select option{color:#141B26}
+.midi input[type=range]{width:100%;accent-color:#7D90FF}
+.midi label{display:flex;gap:7px;align-items:center;font-size:14px;cursor:pointer}
+.midi .mono{color:var(--stage-dim)}
 .lanebox{display:flex;flex-direction:column;gap:6px}
 #lane{height:180px;border:1px solid var(--line);border-radius:12px;background:var(--lane)}
 kbd{font:12px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;background:var(--bg)}
@@ -85,7 +96,24 @@ kbd{font:12px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px
   <p class="small muted" id="micHelp" hidden style="margin:0">Il browser ha bloccato il microfono. Clicca il lucchetto a sinistra dell'indirizzo, imposta <b>Microfono: Consenti</b> e ricarica la pagina.</p>
 
   <div class="stage">
-    <div class="video"><div id="yt"></div><div class="vmsg" id="vmsg" hidden></div></div>
+    <div class="left">
+    <div class="video" id="videoBox"><div id="yt"></div><div class="vmsg" id="vmsg" hidden></div></div>
+    <div class="midi" id="midiBox" hidden>
+      <div><div class="eyebrow">Base dal file karaoke</div><div class="mt" id="mpTitle">—</div></div>
+      <div class="row">
+        <button class="btn primary big" id="mpPlay">Suona</button>
+        <button class="btn" id="mpRestart">Dall'inizio</button>
+        <span class="mono" id="mpTime">0:00 / 0:00</span>
+      </div>
+      <input type="range" id="mpSeek" min="0" max="1000" value="0" aria-label="Posizione nella canzone">
+      <div class="row">
+        <label>Velocità <select id="mpSpeed"><option value="0.6">60%</option><option value="0.75">75%</option><option value="0.9">90%</option><option value="1" selected>100%</option><option value="1.1">110%</option></select></label>
+        <span>Tonalità</span><button class="btn" id="mpDown" aria-label="Abbassa di mezzo tono">−</button><span class="mono" id="mpTr">0</span><button class="btn" id="mpUp" aria-label="Alza di mezzo tono">+</button>
+        <label><input type="checkbox" id="mpGuide" checked> Melodia guida</label>
+      </div>
+      <div class="small" style="color:var(--stage-dim)">Il suono è sintetizzato dall'app, come una tastiera. Puoi rallentare e cambiare tonalità senza perdere il tempo del testo.</div>
+    </div>
+    </div>
     <div class="side">
       <!-- modalità canta -->
       <div id="singView" class="side">
@@ -149,12 +177,13 @@ function detect(b,sr){let r=0;for(let i=0;i<b.length;i++)r+=b[i]*b[i];if(Math.sq
  if(p<=0||mx<c[0]*.4)return -1;const x1=c[p-1],x2=c[p],x3=c[p+1]||x2,A=(x1+x3-2*x2)/2,B=(x3-x1)/2,T=A?p-B/(2*A):p,f=sr/T;return(f>65&&f<1200)?f:-1}
 
 // ---------- microfono ----------
+function ac(){if(!actx)actx=new(window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume();return actx}
 let actx=null,an=null,buf=null,micOn=false,hist=[],cur=null;
 const $=id=>document.getElementById(id);
 async function startMic(){try{
   // la cancellazione dell'eco aiuta a non sentire la base che esce dalle casse
   const st=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:false,autoGainControl:false}});
-  actx=new(window.AudioContext||window.webkitAudioContext)();an=actx.createAnalyser();an.fftSize=2048;actx.createMediaStreamSource(st).connect(an);buf=new Float32Array(2048);micOn=true;
+  ac();an=actx.createAnalyser();an.fftSize=2048;actx.createMediaStreamSource(st).connect(an);buf=new Float32Array(2048);micOn=true;
   $('pill').className='pill on';$('pill').textContent='Microfono attivo';$('micBtn').hidden=true;$('micHelp').hidden=true;
  }catch(e){$('pill').className='pill err';$('pill').textContent='Microfono bloccato';$('micHelp').hidden=false}}
 $('micBtn').onclick=startMic;
@@ -166,7 +195,7 @@ let args={},videoId=null,player=null,playerReady=false,ytLoading=false;
 let lines=[];          // [{text,t}]
 let mode='sing',offset=0,lastIdx=-2;
 let stats={voiced:0,tuned:0,per:{},nFr:0,nOk:0},frameN=0;
-let notes=[],byPhrase={},vtrail=[],curSpans=null;
+let notes=[],notesBase=[],byPhrase={},vtrail=[],curSpans=null;
 const fold=(v,t)=>((v-t)%12+18)%12-6;
 let sy={idx:0,times:[]};
 const trail=[];
@@ -189,8 +218,63 @@ function onState(e){
  if(e.data===YT.PlayerState.PLAYING&&mode==='sing'&&player.getCurrentTime()<1.5){resetStats()}
  if(e.data===YT.PlayerState.ENDED&&mode==='sing')showSummary();
 }
-const now=()=>playerReady&&player.getCurrentTime?player.getCurrentTime():0;
-const playing=()=>playerReady&&player.getPlayerState&&player.getPlayerState()===1;
+let src='yt';
+const now=()=>src==='midi'?mp.time():(playerReady&&player.getCurrentTime?player.getCurrentTime():0);
+const playing=()=>src==='midi'?mp.state===1:(playerReady&&player.getPlayerState&&player.getPlayerState()===1);
+
+// ---------- lettore MIDI (sintetizzatore nel browser) ----------
+const mp={state:2,song:0,ctxStart:0,songStart:0,speed:1,tr:0,guide:true,dur:0,events:[],idx:0,nodes:[],master:null,key:null,
+ time(){return this.state===1?this.songStart+(ac().currentTime-this.ctxStart)*this.speed:this.song}};
+let noiseBuf=null;
+function master(){const c=ac();if(!mp.master){const comp=c.createDynamicsCompressor();comp.threshold.value=-18;comp.ratio.value=4;comp.connect(c.destination);
+ mp.master=c.createGain();mp.master.gain.value=.8;mp.master.connect(comp)}return mp.master}
+function noise(){const c=ac();if(!noiseBuf){noiseBuf=c.createBuffer(1,c.sampleRate*.5,c.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1}return noiseBuf}
+function track(n,end){mp.nodes.push(n);n.onended=()=>{const i=mp.nodes.indexOf(n);if(i>=0)mp.nodes.splice(i,1)}}
+function drum(note,when,vel){const c=ac(),out=master(),g=c.createGain();g.connect(out);
+ if(note===35||note===36){const o=c.createOscillator();o.frequency.setValueAtTime(150,when);o.frequency.exponentialRampToValueAtTime(45,when+.12);
+  g.gain.setValueAtTime(vel*.9,when);g.gain.exponentialRampToValueAtTime(.001,when+.25);o.connect(g);o.start(when);o.stop(when+.3);track(o);return}
+ const s=c.createBufferSource();s.buffer=noise();const f=c.createBiquadFilter();const hat=[42,44,46,49,51,52,55,57,59].includes(note);
+ f.type=hat?'highpass':'bandpass';f.frequency.value=hat?7000:1800;const len=note===46||note===49||note===57?.35:hat?.05:.15;
+ g.gain.setValueAtTime(vel*(hat?.25:.5),when);g.gain.exponentialRampToValueAtTime(.001,when+len);s.connect(f);f.connect(g);s.start(when);s.stop(when+len+.02);track(s)}
+function synth(e,when,dur){const c=ac(),out=master(),vel=e[3]/127;
+ if(e[4]===9){drum(e[2],when,vel);return}
+ const midi=e[2]+mp.tr,f=440*Math.pow(2,(midi-69)/12),fam=Math.floor(e[5]/8),mel=e[6]===1;
+ const o=c.createOscillator(),g=c.createGain(),lp=c.createBiquadFilter();lp.type='lowpass';
+ let type='triangle',att=.01,dec=true,cut=4000,lvl=.11;
+ if(fam===4){type='sine';cut=900;lvl=.2}                      // basso
+ else if(fam===2){type='square';dec=false;cut=2200;lvl=.05}    // organo
+ else if(fam===5||fam===6||fam===11){type='sawtooth';att=.08;dec=false;cut=2000;lvl=.05} // archi, pad
+ else if(fam>=7&&fam<=10){type='sawtooth';att=.03;dec=false;cut=2600;lvl=.06}  // fiati, synth
+ if(mel){type='square';att=.02;dec=false;cut=2400;lvl=.07}     // melodia guida, ben riconoscibile
+ o.type=type;o.frequency.value=f;lp.frequency.value=cut;
+ const end=when+Math.max(.06,dur),peak=lvl*(.4+.6*vel);
+ g.gain.setValueAtTime(0,when);g.gain.linearRampToValueAtTime(peak,when+att);
+ if(dec)g.gain.setTargetAtTime(peak*.25,when+att,.35);g.gain.setTargetAtTime(0,end,.06);
+ o.connect(lp);lp.connect(g);g.connect(out);o.start(when);o.stop(end+.4);track(o)}
+function mpStopAll(){for(const n of [...mp.nodes]){try{n.stop()}catch(e){}}mp.nodes=[]}
+function mpFind(t){let i=0;while(i<mp.events.length&&mp.events[i][0]+mp.events[i][1]<t)i++;return i}
+function mpPlay(){if(!mp.events.length)return;const c=ac();if(mp.song>=mp.dur)mp.song=0;
+ if(mp.song<1.5)resetStats();$('summary').hidden=true;
+ mp.ctxStart=c.currentTime+.08;mp.songStart=mp.song;mp.idx=mpFind(mp.song);mp.state=1}
+function mpPause(){if(mp.state===1){mp.song=mp.time();mp.state=2;mpStopAll()}}
+function mpSeek(t){const was=mp.state===1;mpPause();mp.song=Math.max(0,Math.min(mp.dur,t));vtrail=[];if(was)mpPlay()}
+function mpTick(){if(mp.state!==1)return;const c=ac(),t=mp.time(),h=t+.3*mp.speed;
+ while(mp.idx<mp.events.length&&mp.events[mp.idx][0]<h){const e=mp.events[mp.idx++];if(e[6]===1&&!mp.guide)continue;if(e[0]<t-.05)continue;
+  synth(e,mp.ctxStart+(e[0]-mp.songStart)/mp.speed,e[1]/mp.speed)}
+ if(t>mp.dur+.6){mpStopAll();mp.state=0;mp.song=mp.dur;showSummary()}}
+setInterval(mpTick,40);
+function applyTr(){notes=notesBase.map(n=>Object.assign({},n,{midi:n.midi+(src==='midi'?mp.tr:0)}));byPhrase={};for(const n of notes)(byPhrase[n.phrase]=byPhrase[n.phrase]||[]).push(n);lastIdx=-2;$('mpTr').textContent=(mp.tr>0?'+':'')+mp.tr}
+$('mpPlay').onclick=()=>{mp.state===1?mpPause():mpPlay()};
+$('mpRestart').onclick=()=>{mpSeek(0);if(mp.state!==1)mpPlay()};
+let seeking=false;$('mpSeek').addEventListener('input',()=>{seeking=true});
+$('mpSeek').addEventListener('change',e=>{seeking=false;mpSeek(e.target.value/1000*mp.dur)});
+$('mpSpeed').onchange=e=>{const t=mp.time(),was=mp.state===1;mpPause();mp.speed=+e.target.value;mp.song=t;if(was)mpPlay()};
+const trBy=d=>{const t=mp.time(),was=mp.state===1;mpPause();mp.tr=Math.max(-12,Math.min(12,mp.tr+d));mp.song=t;applyTr();if(was)mpPlay()};
+$('mpDown').onclick=()=>trBy(-1);$('mpUp').onclick=()=>trBy(1);
+$('mpGuide').onchange=e=>{const t=mp.time(),was=mp.state===1;mpPause();mp.guide=e.target.checked;mp.song=t;if(was)mpPlay()};
+function mpUI(){if(src!=='midi')return;const t=Math.min(mp.time(),mp.dur);$('mpPlay').textContent=mp.state===1?'Pausa':'Suona';
+ $('mpTime').textContent=fmt2(t)+' / '+fmt2(mp.dur);if(!seeking)$('mpSeek').value=mp.dur?Math.round(t/mp.dur*1000):0}
+const fmt2=s=>Math.floor(s/60)+':'+String(Math.floor(s%60)).padStart(2,'0');
 
 // ---------- testo ----------
 function lineIndexAt(t){let k=-1;for(let i=0;i<lines.length;i++){if(lines[i].t<=t)k=i;else break}return k}
@@ -293,12 +377,21 @@ window.addEventListener('message',e=>{const d=e.data;if(!d||d.type!=='streamlit:
  const newLines=(a.lines||[]).map(l=>({text:l.text,t:typeof l.t==='number'?l.t:null}));
  const changed=a.song_key!==args.song_key;
  const linesChanged=JSON.stringify(newLines)!==JSON.stringify(lines);
+ // sorgente: file MIDI karaoke oppure video YouTube
+ if(a.midi&&a.midi.events){
+  if(mp.key!==a.song_key){mpPause();mp.key=a.song_key;mp.events=a.midi.events.slice().sort((x,y)=>x[0]-y[0]);mp.dur=a.midi.duration||0;mp.song=0;mp.state=2;mp.tr=0;resetStats()}
+  if(src!=='midi'&&playerReady&&player.pauseVideo)player.pauseVideo();
+  src='midi';$('mpTitle').textContent=a.title||'';
+ }else{if(src==='midi')mpPause();src='yt';mp.key=null}
+ $('midiBox').hidden=src!=='midi';$('videoBox').hidden=src==='midi';$('mSync').hidden=src==='midi';
+ if(src==='midi'&&mode==='sync')setMode('sing');
  const newNotes=a.notes||[];
- if(JSON.stringify(newNotes)!==JSON.stringify(notes)){notes=newNotes;byPhrase={};for(const n of notes)(byPhrase[n.phrase]=byPhrase[n.phrase]||[]).push(n);
-  lastIdx=-2;$('laneBox').hidden=!notes.length;$('sNotesBox').hidden=!notes.length}
+ if(JSON.stringify(newNotes)!==JSON.stringify(notesBase)){notesBase=newNotes;
+  $('laneBox').hidden=!notesBase.length;$('sNotesBox').hidden=!notesBase.length}
+ applyTr();
  args=a;
  if(linesChanged){lines=newLines;if(mode==='sync'&&changed)setMode('sing');else if(mode==='sing')renderLyricsStatic();else renderSync()}
- if(a.video_id!==videoId){videoId=a.video_id;resetStats();
+ if(src==='yt'&&a.video_id&&a.video_id!==videoId){videoId=a.video_id;resetStats();
   if(player&&playerReady){player.cueVideoById(videoId)}else loadYT()}
  setHeight()});
 send('streamlit:componentReady',{apiVersion:1});
@@ -313,7 +406,7 @@ function loop(){readMic();const tn=performance.now()/1000;trail.push({t:tn,m:cur
    if(cur!==null){stats.voiced++;if(Math.abs(cur-Math.round(cur))<=.25)stats.tuned++}
    if(synced()){const i=lineIndexAt(t);if(i>=0&&t<lineEnd(i)){const p=stats.per[i]||(stats.per[i]={fr:0,v:0});p.fr++;if(cur!==null)p.v++}}
    if(++frameN%15===0)updateStats()}}
- if(mode==='sing')drawLane(now()+offset);drawTrail();requestAnimationFrame(loop)}
+ if(mode==='sing')drawLane(now()+offset);drawTrail();mpUI();requestAnimationFrame(loop)}
 renderLyricsStatic();requestAnimationFrame(loop);
 </script>
 </body>
