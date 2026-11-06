@@ -48,7 +48,7 @@ body{font-family:var(--f-body);color:var(--ink);font-size:15px;line-height:1.45;
 .pitch{display:grid;grid-template-columns:auto minmax(0,1fr);gap:12px;align-items:center;border:1px solid var(--line);border-radius:12px;padding:10px 12px;background:var(--lane)}
 .pnote{font:800 34px/1 var(--f-display);min-width:3.2ch;letter-spacing:-.03em}
 canvas{display:block;width:100%;height:70px}
-.stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:8px}
 .stat{border:1px solid var(--line);border-radius:10px;padding:8px 10px}
 .stat b{display:block;font:800 22px var(--f-display);font-variant-numeric:tabular-nums}
 .stat span{font-size:12px;color:var(--muted)}
@@ -61,6 +61,11 @@ canvas{display:block;width:100%;height:70px}
 .synclist .mono{color:var(--muted)}
 .summary{border:1px solid var(--accent);border-radius:12px;padding:14px;background:var(--soft);display:flex;flex-direction:column;gap:6px}
 .summary b.big{font:800 34px var(--f-display)}
+.l-cur.syl{background:none;color:var(--stage-dim)}
+.l-cur .s.done{color:#7D90FF}
+.l-cur .s.now{color:var(--stage-ink);text-decoration:underline;text-decoration-color:#7D90FF;text-decoration-thickness:4px;text-underline-offset:6px}
+.lanebox{display:flex;flex-direction:column;gap:6px}
+#lane{height:180px;border:1px solid var(--line);border-radius:12px;background:var(--lane)}
 kbd{font:12px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;background:var(--bg)}
 </style>
 </head>
@@ -92,6 +97,7 @@ kbd{font:12px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px
         <div class="stats">
           <div class="stat"><b id="sTune">—</b><span>Intonazione · note centrate</span></div>
           <div class="stat"><b id="sPres">—</b><span>Presenza · righe cantate</span></div>
+          <div class="stat" id="sNotesBox" hidden><b id="sNotes">—</b><span>Note giuste · sulla melodia</span></div>
         </div>
         <div class="row small">
           <span class="muted">Testo</span>
@@ -115,6 +121,11 @@ kbd{font:12px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px
         </div>
       </div>
     </div>
+  </div>
+  <div class="lanebox" id="laneBox" hidden>
+    <div class="row" style="justify-content:space-between"><span class="eyebrow">Note e sillabe</span>
+      <span class="small muted">Barra blu = nota da cantare · linea verde = sei sulla nota · arancione = fuori nota</span></div>
+    <canvas id="lane"></canvas>
   </div>
   <div class="summary" id="summary" hidden></div>
 </div>
@@ -154,7 +165,9 @@ function readMic(){if(!micOn){cur=null;return}an.getFloatTimeDomainData(buf);con
 let args={},videoId=null,player=null,playerReady=false,ytLoading=false;
 let lines=[];          // [{text,t}]
 let mode='sing',offset=0,lastIdx=-2;
-let stats={voiced:0,tuned:0,per:{}},frameN=0;
+let stats={voiced:0,tuned:0,per:{},nFr:0,nOk:0},frameN=0;
+let notes=[],byPhrase={},vtrail=[],curSpans=null;
+const fold=(v,t)=>((v-t)%12+18)%12-6;
 let sy={idx:0,times:[]};
 const trail=[];
 
@@ -192,25 +205,30 @@ function renderLyricsStatic(){
 }
 function updateLyrics(t){
  if(!synced())return;const L=$('lyrics');const [p,c,n,n2]=L.children;const i=lineIndexAt(t);
- if(i!==lastIdx){lastIdx=i;
+ if(i!==lastIdx){lastIdx=i;curSpans=null;c.classList.remove('syl');
   if(i<0){p.textContent='';const wait=lines[0].t-t;c.textContent='';n.textContent=lines[0].text;n2.textContent=lines[1]?lines[1].text:'';
-  }else{p.textContent=i>0?lines[i-1].text:'';c.textContent=lines[i].text;n.textContent=lines[i+1]?lines[i+1].text:'';n2.textContent=lines[i+2]?lines[i+2].text:''}}
+  }else{p.textContent=i>0?lines[i-1].text:'';c.textContent=lines[i].text;
+   const ns=(byPhrase[i]||[]).filter(n=>n.syl);
+   if(ns.length){c.replaceChildren();c.classList.add('syl');curSpans=[];
+    for(const n of ns){const sp=document.createElement('span');sp.className='s';sp.textContent=n.syl;c.append(sp);curSpans.push({sp,n});if(n.we)c.append(' ')}}n.textContent=lines[i+1]?lines[i+1].text:'';n2.textContent=lines[i+2]?lines[i+2].text:''}}
  if(i<0){const wait=lines[0].t-t;c.textContent=playing()&&wait<=3.2&&wait>0?'Pronti… '+Math.ceil(wait):'♪';c.style.setProperty('--p','0%')}
+ else if(curSpans){for(const o of curSpans){o.sp.classList.toggle('done',t>=o.n.start+o.n.dur);o.sp.classList.toggle('now',t>=o.n.start&&t<o.n.start+o.n.dur)}}
  else{const s=lines[i].t,e=lineEnd(i);c.style.setProperty('--p',Math.max(0,Math.min(100,(t-s)/(e-s)*100)).toFixed(1)+'%')}
 }
 
 // ---------- statistiche ----------
-function resetStats(){stats={voiced:0,tuned:0,per:{}};$('summary').hidden=true;updateStats()}
+function resetStats(){stats={voiced:0,tuned:0,per:{},nFr:0,nOk:0};vtrail=[];$('summary').hidden=true;updateStats()}
 const pct=(a,b)=>b?Math.round(a/b*100)+'%':'—';
 // una riga conta come cantata se hai usato la voce per almeno un quarto della sua durata
 function presence(){const ps=Object.values(stats.per).filter(p=>p.fr>=30);return [ps.filter(p=>p.v/p.fr>=.25).length,ps.length]}
-function updateStats(){$('sTune').textContent=pct(stats.tuned,stats.voiced);const[a,b]=presence();$('sPres').textContent=synced()?pct(a,b):'—'}
+function updateStats(){$('sNotes').textContent=pct(stats.nOk,stats.nFr);$('sTune').textContent=pct(stats.tuned,stats.voiced);const[a,b]=presence();$('sPres').textContent=synced()?pct(a,b):'—'}
 function showSummary(){
  if(stats.voiced<20)return;const tune=Math.round(stats.tuned/stats.voiced*100),[pa,pb]=presence(),pres=synced()&&pb?Math.round(pa/pb*100):null;
+ const nts=stats.nFr>20?Math.round(stats.nOk/stats.nFr*100):null;
  let msg=tune>=75?'Voce ben centrata sulle note.':tune>=55?'Buona base: allenati con gli esercizi di note tenute per stabilizzare la voce.':'La voce oscilla tra le note: prova gli esercizi «Note tenute» e «Scala a cinque note».';
  if(pres!==null&&pres<60)msg+=' Hai saltato diverse righe: rallenta con la modalità frase per frase in «Le mie canzoni».';
  const s=$('summary');s.replaceChildren();const h=document.createElement('div');h.className='eyebrow';h.textContent='Fine della canzone';
- const b=document.createElement('div');b.innerHTML='<b class="big">'+tune+'%</b> <span class="muted">intonazione</span>'+(pres!==null?'  ·  <b class="big">'+pres+'%</b> <span class="muted">presenza</span>':'');
+ const b=document.createElement('div');b.innerHTML='<b class="big">'+tune+'%</b> <span class="muted">intonazione</span>'+(pres!==null?'  ·  <b class="big">'+pres+'%</b> <span class="muted">presenza</span>':'')+(nts!==null?'  ·  <b class="big">'+nts+'%</b> <span class="muted">note giuste</span>':'');
  const p=document.createElement('div');p.textContent=msg;const n=document.createElement('div');n.className='small muted';
  n.textContent='L\'intonazione misura quanto la tua voce resta centrata su una nota, non se è la nota esatta della canzone: per quello usa la melodia guidata in «Le mie canzoni».';
  s.append(h,b,p,n);s.hidden=false}
@@ -224,6 +242,27 @@ function drawTrail(){const cv=$('cv'),d=devicePixelRatio||1,W=cv.clientWidth,H=c
  g.strokeStyle=line;g.lineWidth=1;for(let m=Math.ceil(lo);m<=hi;m++){g.globalAlpha=.5;g.beginPath();g.moveTo(0,y(m));g.lineTo(W,y(m));g.stroke()}g.globalAlpha=1;
  g.lineWidth=3;g.lineCap='round';let pr=null;for(const p of trail){if(p.m===null){pr=null;continue}const x=(p.t-(tn-6))/6*W,yy=y(Math.max(lo,Math.min(hi,p.m)));
   if(pr){g.strokeStyle=Math.abs(p.m-Math.round(p.m))<=.25?good:warm;g.beginPath();g.moveTo(pr[0],pr[1]);g.lineTo(x,yy);g.stroke()}pr=[x,yy]}}
+
+// ---------- corsia delle note con le sillabe ----------
+function drawLane(t){if(!notes.length)return;const cv=$('lane'),d=devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;if(!W)return;
+ if(cv.width!==Math.round(W*d)||cv.height!==Math.round(H*d)){cv.width=Math.round(W*d);cv.height=Math.round(H*d)}
+ const g=cv.getContext('2d');g.setTransform(d,0,0,d,0,0);const cs=getComputedStyle(document.documentElement),k=n=>cs.getPropertyValue(n).trim();
+ g.fillStyle=k('--lane');g.fillRect(0,0,W,H);
+ let lo=Math.min(...notes.map(n=>n.midi))-1,hi=Math.max(...notes.map(n=>n.midi))+1;if(hi-lo<10){const p=10-(hi-lo);lo-=Math.floor(p/2);hi+=Math.ceil(p/2)}
+ const top=10,bot=26,y=m=>top+(hi-m)/(hi-lo)*(H-top-bot),lw=40,span=7,ph=lw+(W-lw)*.25,x=tt=>ph+(tt-t)/span*(W-lw);
+ g.font='10px "IBM Plex Mono",monospace';g.textBaseline='middle';
+ for(let m=Math.ceil(lo);m<=hi;m++){const nat=[0,2,4,5,7,9,11].includes(((m%12)+12)%12);g.strokeStyle=k('--line');g.globalAlpha=nat?.9:.3;g.beginPath();g.moveTo(lw,y(m));g.lineTo(W,y(m));g.stroke();g.globalAlpha=1;if(nat&&(m%12===0||m%12===7||hi-lo<=14)){g.fillStyle=k('--muted');g.fillText(nameOf(m),3,y(m))}}
+ const rh=Math.max(7,(H-top-bot)/(hi-lo)*.75);
+ for(const n of notes){const x0=x(n.start),x1=x(n.start+n.dur);if(x1<lw||x0>W)continue;const act=t>=n.start&&t<n.start+n.dur,xx=Math.max(x0+1,lw),ww=Math.max(3,x1-2-xx);
+  g.fillStyle=act?k('--accent'):k('--soft');g.strokeStyle=k('--accent');g.lineWidth=1.5;g.beginPath();g.rect(xx,y(n.midi)-rh/2,ww,rh);g.fill();g.stroke();
+  if(n.syl){g.save();g.font=(act?'700 ':'600 ')+'13px "IBM Plex Sans",system-ui,sans-serif';g.fillStyle=act?k('--accent'):k('--ink');g.textBaseline='top';g.fillText(n.syl,xx+1,y(n.midi)+rh/2+3);g.restore()}}
+ const target=tt=>notes.find(n=>tt>=n.start&&tt<n.start+n.dur);
+ g.lineWidth=3;g.lineCap='round';let pr=null;
+ for(const v of vtrail){if(v.m===null){pr=null;continue}const tg=target(v.t);let m=v.m;if(tg)m=tg.midi+fold(v.m,tg.midi);else{while(m>hi+1)m-=12;while(m<lo-1)m+=12}
+  const px=x(v.t),yy=y(Math.max(lo,Math.min(hi,m)));if(pr&&px>=lw&&px-pr[0]<25){g.strokeStyle=tg&&Math.abs(m-tg.midi)<.5?k('--good'):k('--warm');g.beginPath();g.moveTo(pr[0],pr[1]);g.lineTo(px,yy);g.stroke()}pr=[px,yy]}
+ g.strokeStyle=k('--ink');g.globalAlpha=.45;g.lineWidth=1.5;g.beginPath();g.moveTo(ph,0);g.lineTo(ph,H);g.stroke();g.globalAlpha=1;
+ if(cur!==null&&playing()){const tg=target(t);let m=tg?tg.midi+fold(cur,tg.midi):cur;while(!tg&&m>hi+1)m-=12;while(!tg&&m<lo-1)m+=12;m=Math.max(lo,Math.min(hi,m));
+  g.fillStyle=tg&&Math.abs(m-tg.midi)<.5?k('--good'):k('--warm');g.beginPath();g.arc(ph,y(m),6,0,7);g.fill()}}
 
 // ---------- sincronizzazione ----------
 function renderSync(){const L=$('syList');L.replaceChildren();
@@ -254,6 +293,9 @@ window.addEventListener('message',e=>{const d=e.data;if(!d||d.type!=='streamlit:
  const newLines=(a.lines||[]).map(l=>({text:l.text,t:typeof l.t==='number'?l.t:null}));
  const changed=a.song_key!==args.song_key;
  const linesChanged=JSON.stringify(newLines)!==JSON.stringify(lines);
+ const newNotes=a.notes||[];
+ if(JSON.stringify(newNotes)!==JSON.stringify(notes)){notes=newNotes;byPhrase={};for(const n of notes)(byPhrase[n.phrase]=byPhrase[n.phrase]||[]).push(n);
+  lastIdx=-2;$('laneBox').hidden=!notes.length;$('sNotesBox').hidden=!notes.length}
  args=a;
  if(linesChanged){lines=newLines;if(mode==='sync'&&changed)setMode('sing');else if(mode==='sing')renderLyricsStatic();else renderSync()}
  if(a.video_id!==videoId){videoId=a.video_id;resetStats();
@@ -265,10 +307,13 @@ send('streamlit:componentReady',{apiVersion:1});
 function loop(){readMic();const tn=performance.now()/1000;trail.push({t:tn,m:cur});
  $('pnote').textContent=cur!==null?nameOf(cur):'—';
  if(mode==='sing'){const t=now()+offset;updateLyrics(t);
-  if(playing()){if(cur!==null){stats.voiced++;if(Math.abs(cur-Math.round(cur))<=.25)stats.tuned++}
+  if(playing()){
+   if(vtrail.length&&vtrail[vtrail.length-1].t>t+.5)vtrail=[];vtrail.push({t,m:cur});while(vtrail.length&&vtrail[0].t<t-3)vtrail.shift();
+   if(notes.length){const tn=notes.find(n=>t>=n.start+.1&&t<n.start+n.dur);if(tn){stats.nFr++;if(cur!==null&&Math.abs(fold(cur,tn.midi))<.5)stats.nOk++}}
+   if(cur!==null){stats.voiced++;if(Math.abs(cur-Math.round(cur))<=.25)stats.tuned++}
    if(synced()){const i=lineIndexAt(t);if(i>=0&&t<lineEnd(i)){const p=stats.per[i]||(stats.per[i]={fr:0,v:0});p.fr++;if(cur!==null)p.v++}}
    if(++frameN%15===0)updateStats()}}
- drawTrail();requestAnimationFrame(loop)}
+ if(mode==='sing')drawLane(now()+offset);drawTrail();requestAnimationFrame(loop)}
 renderLyricsStatic();requestAnimationFrame(loop);
 </script>
 </body>
