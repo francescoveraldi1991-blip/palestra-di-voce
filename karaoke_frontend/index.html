@@ -183,11 +183,15 @@ const $=id=>document.getElementById(id);
 async function startMic(){try{
   // la cancellazione dell'eco aiuta a non sentire la base che esce dalle casse
   const st=await navigator.mediaDevices.getUserMedia({audio:{echoCancellation:true,noiseSuppression:false,autoGainControl:false}});
-  ac();an=actx.createAnalyser();an.fftSize=2048;actx.createMediaStreamSource(st).connect(an);buf=new Float32Array(2048);micOn=true;
-  $('pill').className='pill on';$('pill').textContent='Microfono attivo';$('micBtn').hidden=true;$('micHelp').hidden=true;
+  ac();an=actx.createAnalyser();an.fftSize=2048;micSrc=actx.createMediaStreamSource(st);micSrc.connect(an);micStream=st;buf=new Float32Array(2048);micOn=true;
+  $('pill').className='pill on';$('pill').textContent='Microfono attivo';$('micBtn').textContent='Spegni microfono';$('micBtn').classList.remove('primary');$('micHelp').hidden=true;
  }catch(e){$('pill').className='pill err';$('pill').textContent='Microfono bloccato';$('micHelp').hidden=false}}
-$('micBtn').onclick=startMic;
-function readMic(){if(!micOn){cur=null;return}an.getFloatTimeDomainData(buf);const f=detect(buf,actx.sampleRate);
+let micStream=null,micSrc=null;
+function stopMic(){if(micStream)micStream.getTracks().forEach(t=>t.stop());if(micSrc)try{micSrc.disconnect()}catch(e){}
+ micStream=null;micSrc=null;an=null;micOn=false;cur=null;hist=[];
+ $('pill').className='pill';$('pill').textContent='Microfono spento';$('micBtn').textContent='Attiva microfono';$('micBtn').classList.add('primary')}
+$('micBtn').onclick=()=>micOn?stopMic():startMic();
+function readMic(){if(!micOn||!an){cur=null;return}an.getFloatTimeDomainData(buf);const f=detect(buf,actx.sampleRate);
  if(f>0){hist.push(f2m(f));if(hist.length>5)hist.shift();const s=[...hist].sort((a,b)=>a-b);cur=s[s.length>>1]}else{hist=[];cur=null}}
 
 // ---------- stato ----------
@@ -216,7 +220,7 @@ function makePlayer(){if(player||!videoId)return;
    showVMsg(msg)}}})}
 function onState(e){
  if(e.data===YT.PlayerState.PLAYING&&mode==='sing'&&player.getCurrentTime()<1.5){resetStats()}
- if(e.data===YT.PlayerState.ENDED&&mode==='sing')showSummary();
+ if(e.data===YT.PlayerState.ENDED&&mode==='sing'){showSummary();if(micOn)stopMic()}
 }
 let src='yt';
 const now=()=>src==='midi'?mp.time():(playerReady&&player.getCurrentTime?player.getCurrentTime():0);
@@ -261,7 +265,7 @@ function mpSeek(t){const was=mp.state===1;mpPause();mp.song=Math.max(0,Math.min(
 function mpTick(){if(mp.state!==1)return;const c=ac(),t=mp.time(),h=t+.3*mp.speed;
  while(mp.idx<mp.events.length&&mp.events[mp.idx][0]<h){const e=mp.events[mp.idx++];if(e[6]===1&&!mp.guide)continue;if(e[0]<t-.05)continue;
   synth(e,mp.ctxStart+(e[0]-mp.songStart)/mp.speed,e[1]/mp.speed)}
- if(t>mp.dur+.6){mpStopAll();mp.state=0;mp.song=mp.dur;showSummary()}}
+ if(t>mp.dur+.6){mpStopAll();mp.state=0;mp.song=mp.dur;showSummary();if(micOn)stopMic()}}
 setInterval(mpTick,40);
 function applyTr(){notes=notesBase.map(n=>Object.assign({},n,{midi:n.midi+(src==='midi'?mp.tr:0)}));byPhrase={};for(const n of notes)(byPhrase[n.phrase]=byPhrase[n.phrase]||[]).push(n);lastIdx=-2;$('mpTr').textContent=(mp.tr>0?'+':'')+mp.tr}
 $('mpPlay').onclick=()=>{mp.state===1?mpPause():mpPlay()};
