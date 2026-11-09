@@ -77,6 +77,26 @@ canvas{display:block;width:100%;height:70px}
 .midi .mono{color:var(--stage-dim)}
 .lanebox{display:flex;flex-direction:column;gap:6px}
 #lane{height:180px;border:1px solid var(--line);border-radius:12px;background:var(--lane)}
+.teach{display:flex;flex-direction:column;gap:12px;border:1px solid var(--line);border-radius:12px;padding:16px;background:var(--bg)}
+.tbar{height:8px;border-radius:4px;background:var(--lane);overflow:hidden;border:1px solid var(--line)}
+.tbar i{display:block;height:100%;width:0;background:var(--good);transition:width .3s}
+.phr{display:flex;flex-wrap:wrap;gap:5px}
+.phr button{appearance:none;font:600 12px var(--f-mono);min-width:34px;padding:5px 8px;border-radius:7px;border:1px solid var(--line);background:var(--bg);color:var(--muted);cursor:pointer}
+.phr button.ok{background:var(--good);border-color:var(--good);color:var(--on)}
+.phr button.wip{border-color:var(--warm);color:var(--warm)}
+.phr button.on{outline:2px solid var(--accent);outline-offset:1px;color:var(--ink)}
+.phr button.ok.on{color:var(--on)}
+.tsteps{display:flex;flex-wrap:wrap;gap:5px}
+.tsteps span{font:600 12px var(--f-body);padding:4px 10px;border-radius:999px;border:1px solid var(--line);color:var(--muted)}
+.tsteps span.on{background:var(--accent);border-color:var(--accent);color:var(--on)}
+.tsteps span.done{color:var(--good);border-color:var(--good)} .tsteps span.done::before{content:"✓ "}
+.ttitle{font:800 21px/1.2 var(--f-display);letter-spacing:-.01em}
+.tinfo{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:6px}
+.tinfo ul,.tres ul{margin:0;padding-left:1.2em;display:flex;flex-direction:column;gap:4px;font-size:14px}
+.tres{border-top:1px solid var(--line);padding-top:10px;display:flex;flex-direction:column;gap:6px}
+.tres b.sc{font:800 30px var(--f-display)}
+.bcue{align-self:flex-start;font:800 18px var(--f-display);color:#3CC48A;border:2px solid #3CC48A;border-radius:10px;padding:2px 12px}
+.card.teachmode .seg,.card.teachmode #offRow,.card.teachmode #statsRow{display:none}
 kbd{font:12px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px;border-radius:5px;padding:1px 6px;background:var(--bg)}
 </style>
 </head>
@@ -113,21 +133,38 @@ kbd{font:12px var(--f-mono);border:1px solid var(--line);border-bottom-width:2px
       </div>
       <div class="small" style="color:var(--stage-dim)">Il suono è sintetizzato dall'app, come una tastiera. Puoi rallentare e cambiare tonalità senza perdere il tempo del testo.</div>
     </div>
+    <div class="teach" id="teach" hidden>
+      <div class="row" style="justify-content:space-between"><span class="eyebrow">Le frasi della canzone</span><span class="small muted" id="tProg"></span></div>
+      <div class="tbar"><i id="tBar"></i></div>
+      <div class="phr" id="tPhr"></div>
+      <div class="tsteps" id="tSteps"></div>
+      <div class="ttitle" id="tTitle"></div>
+      <div id="tText"></div>
+      <div class="row" id="tActs"></div>
+      <div class="tres" id="tRes" hidden></div>
+      <div class="tinfo">
+        <span class="eyebrow">Come cantare questa frase</span>
+        <ul id="tTips"></ul>
+        <div class="row small"><span>Tonalità</span><button class="btn" id="tDown" aria-label="Abbassa di mezzo tono">−</button><span class="mono" id="tTr">0</span><button class="btn" id="tUp" aria-label="Alza di mezzo tono">+</button>
+          <span class="muted">se la frase è troppo alta o bassa per te</span></div>
+      </div>
+    </div>
     </div>
     <div class="side">
       <!-- modalità canta -->
       <div id="singView" class="side">
+        <div class="bcue" id="bcue" hidden></div>
         <div class="lyrics" id="lyrics"></div>
         <div class="pitch">
           <div><div class="eyebrow">La tua nota</div><div class="pnote" id="pnote">—</div></div>
           <canvas id="cv"></canvas>
         </div>
-        <div class="stats">
+        <div class="stats" id="statsRow">
           <div class="stat"><b id="sTune">—</b><span>Intonazione · note centrate</span></div>
           <div class="stat"><b id="sPres">—</b><span>Presenza · righe cantate</span></div>
           <div class="stat" id="sNotesBox" hidden><b id="sNotes">—</b><span>Note giuste · sulla melodia</span></div>
         </div>
-        <div class="row small">
+        <div class="row small" id="offRow">
           <span class="muted">Testo</span>
           <button class="btn" id="offM">anticipa 0,5 s</button>
           <button class="btn" id="offP">ritarda 0,5 s</button>
@@ -198,7 +235,7 @@ function readMic(){if(!micOn||!an){cur=null;return}an.getFloatTimeDomainData(buf
 let args={},videoId=null,player=null,playerReady=false,ytLoading=false;
 let lines=[];          // [{text,t}]
 let mode='sing',offset=0,lastIdx=-2;
-let stats={voiced:0,tuned:0,per:{},nFr:0,nOk:0},frameN=0;
+let stats={voiced:0,tuned:0,per:{},nFr:0,nOk:0,nV:0,dev:0,dn:0,pn:{}},frameN=0;
 let notes=[],notesBase=[],byPhrase={},vtrail=[],curSpans=null;
 const fold=(v,t)=>((v-t)%12+18)%12-6;
 let sy={idx:0,times:[]};
@@ -265,7 +302,8 @@ function mpSeek(t){const was=mp.state===1;mpPause();mp.song=Math.max(0,Math.min(
 function mpTick(){if(mp.state!==1)return;const c=ac(),t=mp.time(),h=t+.3*mp.speed;
  while(mp.idx<mp.events.length&&mp.events[mp.idx][0]<h){const e=mp.events[mp.idx++];if(e[6]===1&&!mp.guide)continue;if(e[0]<t-.05)continue;
   synth(e,mp.ctxStart+(e[0]-mp.songStart)/mp.speed,e[1]/mp.speed)}
- if(t>mp.dur+.6){mpStopAll();mp.state=0;mp.song=mp.dur;showSummary();if(micOn)stopMic()}}
+ if(mp.stopAt!=null&&t>mp.stopAt){mpStopAll();mp.state=2;mp.song=mp.stopAt;const cb=mp.onStop;mp.stopAt=null;mp.onStop=null;if(cb)cb();return}
+ if(t>mp.dur+.6){mpStopAll();mp.state=0;mp.song=mp.dur;if(!T.on)showSummary();if(micOn)stopMic()}}
 setInterval(mpTick,40);
 function applyTr(){notes=notesBase.map(n=>Object.assign({},n,{midi:n.midi+(src==='midi'?mp.tr:0)}));byPhrase={};for(const n of notes)(byPhrase[n.phrase]=byPhrase[n.phrase]||[]).push(n);lastIdx=-2;$('mpTr').textContent=(mp.tr>0?'+':'')+mp.tr}
 $('mpPlay').onclick=()=>{mp.state===1?mpPause():mpPlay()};
@@ -305,7 +343,7 @@ function updateLyrics(t){
 }
 
 // ---------- statistiche ----------
-function resetStats(){stats={voiced:0,tuned:0,per:{},nFr:0,nOk:0};vtrail=[];$('summary').hidden=true;updateStats()}
+function resetStats(){stats={voiced:0,tuned:0,per:{},nFr:0,nOk:0,nV:0,dev:0,dn:0,pn:{}};vtrail=[];$('summary').hidden=true;updateStats()}
 const pct=(a,b)=>b?Math.round(a/b*100)+'%':'—';
 // una riga conta come cantata se hai usato la voce per almeno un quarto della sua durata
 function presence(){const ps=Object.values(stats.per).filter(p=>p.fr>=30);return [ps.filter(p=>p.v/p.fr>=.25).length,ps.length]}
@@ -348,6 +386,11 @@ function drawLane(t){if(!notes.length)return;const cv=$('lane'),d=devicePixelRat
  for(const n of notes){const x0=x(n.start),x1=x(n.start+n.dur);if(x1<lw||x0>W)continue;const act=t>=n.start&&t<n.start+n.dur,xx=Math.max(x0+1,lw),ww=Math.max(3,x1-2-xx);
   g.fillStyle=act?k('--accent'):k('--soft');g.strokeStyle=k('--accent');g.lineWidth=1.5;g.beginPath();g.rect(xx,y(n.midi)-rh/2,ww,rh);g.fill();g.stroke();
   if(n.syl){g.save();g.font=(act?'700 ':'600 ')+'13px "IBM Plex Sans",system-ui,sans-serif';g.fillStyle=act?k('--accent'):k('--ink');g.textBaseline='top';g.fillText(n.syl,xx+1,y(n.midi)+rh/2+3);g.restore()}}
+ // segni di respiro
+ g.save();for(const b of breaths){const bx=x(b.t+Math.min(b.len,.6)/2);if(bx<lw||bx>W)continue;
+  g.strokeStyle=k('--good');g.globalAlpha=.5;g.setLineDash([3,4]);g.lineWidth=1;g.beginPath();g.moveTo(bx,14);g.lineTo(bx,H-bot);g.stroke();g.setLineDash([]);g.globalAlpha=1;
+  g.fillStyle=k('--good');g.font='800 18px "Bricolage Grotesque",sans-serif';g.textBaseline='top';g.textAlign='center';g.fillText('’',bx,1);
+  g.font='600 10px "IBM Plex Sans",sans-serif';g.fillText('respira',bx,H-bot+12);g.textAlign='left'}g.restore();
  const target=tt=>notes.find(n=>tt>=n.start&&tt<n.start+n.dur);
  g.lineWidth=3;g.lineCap='round';let pr=null;
  for(const v of vtrail){if(v.m===null){pr=null;continue}const tg=target(v.t);let m=v.m;if(tg)m=tg.midi+fold(v.m,tg.midi);else{while(m>hi+1)m-=12;while(m<lo-1)m+=12}
@@ -355,6 +398,110 @@ function drawLane(t){if(!notes.length)return;const cv=$('lane'),d=devicePixelRat
  g.strokeStyle=k('--ink');g.globalAlpha=.45;g.lineWidth=1.5;g.beginPath();g.moveTo(ph,0);g.lineTo(ph,H);g.stroke();g.globalAlpha=1;
  if(cur!==null&&playing()){const tg=target(t);let m=tg?tg.midi+fold(cur,tg.midi):cur;while(!tg&&m>hi+1)m-=12;while(!tg&&m<lo-1)m+=12;m=Math.max(lo,Math.min(hi,m));
   g.fillStyle=tg&&Math.abs(m-tg.midi)<.5?k('--good'):k('--warm');g.beginPath();g.arc(ph,y(m),6,0,7);g.fill()}}
+
+// ---------- respiri: pause della melodia ----------
+let breaths=[];
+function calcBreaths(){breaths=[];const ns=[...notes].sort((a,b)=>a.start-b.start);if(!ns.length)return;
+ breaths.push({t:Math.max(0,ns[0].start-.7),len:.6,major:true});
+ for(let i=0;i+1<ns.length;i++){const a=ns[i],b=ns[i+1],end=a.start+a.dur,gap=b.start-end;
+  if(gap>=.3||b.phrase!==a.phrase)breaths.push({t:end,len:Math.max(gap,.15),major:gap>=.8||b.phrase!==a.phrase,quick:gap<.25})}}
+function breathCue(t){const c=$('bcue');if(!playing()||!breaths.length){c.hidden=true;return}
+ if(T.on&&T.ph&&t<T.ph.start-.05){const r=Math.ceil((T.ph.start-t)/mp.speed);c.hidden=false;c.textContent=r>1?'Preparati… '+(r-1):'Respira e attacca!';return}
+ const b=breaths.find(b=>t>=b.t-.45&&t<=b.t+Math.min(b.len,.9));c.hidden=!b;if(b)c.textContent='’ Respira ora'}
+
+// ---------- insegnante: la canzone frase per frase ----------
+const T={on:false,phr:[],i:0,step:0,ph:null,busy:false,join:false,key:''};
+const STEPS=['Ascolta','Con la guida, lenta','Con la guida','Da solo'];
+const LSg=(k,d)=>{try{const v=localStorage.getItem(k);return v?JSON.parse(v):d}catch(e){return d}};
+const LSs=(k,v)=>{try{localStorage.setItem(k,JSON.stringify(v))}catch(e){}};
+const tState=()=>LSg('pdv.learn.'+T.key,{});
+function buildPhrases(){const P=[];
+ lines.forEach((l,i)=>{const ns=notes.filter(n=>n.phrase===i).sort((a,b)=>a.start-b.start);if(!ns.length)return;
+  const ph={idx:[i],start:ns[0].start,end:ns[ns.length-1].start+ns[ns.length-1].dur,ns,text:l.text};
+  const last=P[P.length-1];
+  if(last&&(last.end-last.start<2.5||ph.end-ph.start<1.5)&&ph.end-last.start<9&&ph.start-last.end<1.2){last.idx.push(i);last.end=ph.end;last.ns=last.ns.concat(ns);last.text+=' / '+l.text}
+  else P.push(ph)});
+ T.phr=P}
+function nm(n){return nameOf(n.midi)}
+const sylOf=n=>n.syl?'«'+n.syl+'»':'(vocalizzo)';
+function phraseTips(ph){const ns=ph.ns,tips=[];
+ const bIn=breaths.filter(b=>b.t>ph.start+.05&&b.t<ph.end-.05);
+ if(bIn.some(b=>b.quick))tips.push('Tra una riga e l\'altra la musica non lascia pause: fai un respiro veloce dalla bocca nel segno verde.');
+ tips.unshift('Prendi fiato prima di iniziare'+(bIn.length?': dentro la frase puoi respirare '+(bIn.length===1?'una volta':bIn.length+' volte')+' (segni verdi ’).':'. Dentro la frase non ci sono pause: un solo respiro per tutta la frase.'));
+ let pts=[ph.start].concat(bIn.map(b=>b.t)).concat([ph.end]),longest=0;for(let i=0;i+1<pts.length;i++)longest=Math.max(longest,pts[i+1]-pts[i]);
+ if(longest>6)tips.push('C\'è un tratto di '+Math.round(longest)+' secondi senza pause: respira in basso e fai uscire poca aria all\'inizio.');
+ const hi=ns.reduce((a,b)=>b.midi>a.midi?b:a),lo=ns.reduce((a,b)=>b.midi<a.midi?b:a);
+ if(hi.midi-lo.midi>=9)tips.push('La frase va da '+nm(lo)+' a '+nm(hi)+' ('+(hi.midi-lo.midi)+' semitoni): è ampia, cantala prima lentamente.');
+ tips.push('La nota più acuta è '+nm(hi)+' su '+sylOf(hi)+': non spingere, pensala leggera e «in avanti».');
+ const jumps=[];for(let i=0;i+1<ns.length;i++){const d=ns[i+1].midi-ns[i].midi;if(Math.abs(d)>=5&&ns[i+1].start-(ns[i].start+ns[i].dur)<.6)jumps.push([Math.abs(d),ns[i],ns[i+1],d])}
+ jumps.sort((a,b)=>b[0]-a[0]).slice(0,2).forEach(([j,a,b,d])=>tips.push('Salto di '+j+' semitoni '+(d>0?'verso l\'alto':'verso il basso')+' da '+sylOf(a)+' a '+sylOf(b)+': immagina la nota d\'arrivo prima di cantarla.'));
+ ns.filter(n=>n.dur>=1.4).slice(0,2).forEach(n=>tips.push('Nota lunga su '+sylOf(n)+' ('+n.dur.toFixed(1).replace('.',',')+' s): sostieni il fiato fino alla fine, senza calare.'));
+ for(let i=0;i+3<ns.length;i++){if(ns.slice(i,i+4).every(n=>n.dur<.22)){tips.push('Passaggio veloce da '+sylOf(ns[i])+': imparalo prima con la guida lenta.');break}}
+ return tips}
+function teachUI(title,text,acts,res){const st=tState(),P=T.phr;
+ const learned=P.filter((_,i)=>st[i]&&st[i].ok).length;$('tProg').textContent=learned+' di '+P.length+' frasi imparate';$('tBar').style.width=(P.length?learned/P.length*100:0)+'%';
+ const H=$('tPhr');H.replaceChildren();P.forEach((p,i)=>{const b=document.createElement('button');b.textContent=(st[i]&&st[i].ok?'✓ ':'')+(i+1);
+  b.className=(st[i]&&st[i].ok?'ok':st[i]?'wip':'')+(i===T.i?' on':'');b.title=p.text;b.onclick=()=>{if(T.busy)return;selectPhrase(i)};H.append(b)});
+ const S=$('tSteps');S.replaceChildren();STEPS.forEach((n,i)=>{const e=document.createElement('span');e.textContent=n;e.className=T.join?'':(i===T.step?'on':i<T.step?'done':'');S.append(e)});
+ $('tTitle').textContent=title;$('tText').textContent=text;$('tActs').replaceChildren(...acts);
+ const R=$('tRes');if(res){R.replaceChildren(...res);R.hidden=false}else R.hidden=true;
+ if(T.ph){const U=$('tTips');U.replaceChildren();phraseTips(T.ph).forEach(x=>{const li=document.createElement('li');li.textContent=x;U.append(li)})}}
+function tb(label,fn,primary){const b=document.createElement('button');b.className='btn'+(primary?' primary':'');b.textContent=label;b.onclick=fn;return b}
+function selectPhrase(i){T.i=i;T.join=false;T.ph=T.phr[i];const st=tState()[i];T.step=st?Math.min(3,st.step||0):0;
+ mpPause();mp.song=Math.max(0,T.ph.start-.8);vtrail=[];prompt()}
+function prompt(){const n=T.i+1,P=T.phr;
+ if(!P.length){teachUI('Questa canzone non si può insegnare','Nel file non ho trovato la traccia della melodia abbinata al testo: puoi cantarla nella scheda Karaoke.',[]);return}
+ if(T.step===0)teachUI('Frase '+n+' · Ascolta','Ascolta la frase con la melodia guida e segui il testo. I segni verdi ’ sulla corsia delle note ti dicono dove respirare.',
+  [tb('Ascolta la frase',()=>attempt(0),true),tb('La conosco già',()=>{T.step=1;save(0,1);prompt()})]);
+ else if(T.step===1)teachUI('Frase '+n+' · Con la guida, lenta','La base va al 75% e la melodia guida canta con te. Segui le barre blu e le sillabe; quando compare «Respira ora», prendi fiato.',
+  [tb('Canta (75%)',()=>attempt(1),true),tb('Riascolta',()=>attempt(0))]);
+ else if(T.step===2)teachUI('Frase '+n+' · Con la guida, a tempo','Ora a velocità piena, sempre con la melodia guida.',
+  [tb('Canta',()=>attempt(2),true),tb('Torna lenta',()=>{T.step=1;prompt()})]);
+ else teachUI('Frase '+n+' · Da solo','La melodia guida tace: senti solo la base. Per imparare la frase serve almeno il 70% di note giuste.',
+  [tb('Canta da solo',()=>attempt(3),true),tb('Torna con la guida',()=>{T.step=2;prompt()})])}
+function save(i,step,ok,best){const st=tState(),o=st[i]||{};o.step=Math.max(o.step||0,step);if(ok)o.ok=true;if(best!=null)o.best=Math.max(o.best||0,best);st[i]=o;LSs('pdv.learn.'+T.key,st)}
+async function attempt(step,ph){ph=ph||T.ph;const sing=step>0;
+ if(sing&&!micOn)await startMic();
+ if(sing&&!micOn){teachUI('Serve il microfono','Premi «Attiva microfono» in alto e consenti l\'accesso, poi riprova.',[tb('Riprova',()=>prompt(),true)]);return}
+ T.busy=true;T.cur=ph;mpPause();mp.speed=step===1?.75:1;mp.guide=step<3;
+ const pre=Math.min(3,ph.start);mp.song=ph.start-pre;mp.stopAt=ph.end+.5;
+ mp.onStop=()=>{T.busy=false;finishAttempt(step,ph,sing)};
+ mpPlay();resetStats();
+ $('tActs').replaceChildren(tb('Ferma',()=>{mp.onStop=null;mp.stopAt=null;mpPause();T.busy=false;if(micOn)stopMic();prompt()}))}
+function finishAttempt(step,ph,sing){if(micOn)stopMic();
+ if(!sing){T.step=Math.max(T.step,1);save(T.i,1);prompt();return}
+ const pctv=stats.nFr?Math.round(stats.nOk/stats.nFr*100):0,voiced=stats.nFr?stats.nV/stats.nFr:0;
+ const res=[];const head=document.createElement('div');
+ if(voiced<.25){head.textContent='Non ti ho sentito abbastanza: avvicinati al microfono e canta a volume normale, in cuffia.';
+  teachUI($('tTitle').textContent,$('tText').textContent,[tb('Riprova',()=>attempt(step,ph),true)],[head]);return}
+ head.innerHTML='<b class="sc">'+pctv+'%</b> <span class="muted">di note giuste</span>';res.push(head);
+ const tips=[];const avg=stats.dn?stats.dev/stats.dn:0;
+ if(avg<-.25)tips.push('Tendi a calare: sostieni il fiato fino in fondo alle note.');else if(avg>.25)tips.push('Tendi a crescere: rilassa collo e mascella.');
+ const worst=Object.values(stats.pn).filter(p=>p.fr>=6).sort((a,b)=>a.ok/a.fr-b.ok/b.fr).slice(0,2).filter(p=>p.ok/p.fr<.5);
+ if(worst.length)tips.push('Da sistemare: '+worst.map(p=>sylOf(p.n)+' ('+nm(p.n)+')').join(' e ')+'. Riascolta quel punto e cantalo piano.');
+ const ul=document.createElement('ul');tips.forEach(x=>{const li=document.createElement('li');li.textContent=x;ul.append(li)});if(tips.length)res.push(ul);
+ const lg=LSg('pdv.progress',[]);lg.push({d:Date.now(),k:'song',id:T.key,name:args.title||T.key,pct:pctv});LSs('pdv.progress',lg.slice(-2000));
+ if(T.join){const ok=pctv>=65;
+  teachUI(ok?'Frasi unite!':'Quasi: '+pctv+'%',ok?'Hai cantato insieme le frasi '+(T.i)+' e '+(T.i+1)+'. Passa alla frase successiva.':'Ripeti le due frasi insieme: il passaggio tra una e l\'altra è il punto da curare (respira nel segno verde).',
+   [tb(ok?'Frase successiva':'Riprova',ok?nextPhrase:()=>attempt(3,ph),true),tb('Torna alla frase '+(T.i+1),()=>{T.join=false;T.ph=T.phr[T.i];prompt()})],res);return}
+ const need=[0,55,60,70][step];
+ if(pctv>=need){save(T.i,Math.min(3,step+1),step===3,pctv);
+  if(step<3){T.step=step+1;teachUI('Bene, '+pctv+'%!',step===1?'Ora la stessa frase a velocità piena.':'Ora prova da solo, senza melodia guida.',[tb('Avanti',()=>prompt(),true),tb('Ripeti',()=>attempt(step,ph))],res)}
+  else{const acts=[];if(T.i>0)acts.push(tb('Unisci alla frase '+T.i,()=>joinPrev(),true));acts.push(tb(T.i<T.phr.length-1?'Frase successiva':'Canta tutta la canzone',T.i<T.phr.length-1?nextPhrase:wholeSong,T.i===0));acts.push(tb('Riprova da solo',()=>attempt(3,ph)));
+   teachUI('Frase '+(T.i+1)+' imparata!','L\'hai cantata da solo con il '+pctv+'% di note giuste.',acts,res)}}
+ else{save(T.i,step,false,pctv);const acts=[tb('Riprova',()=>attempt(step,ph),true)];
+  if(step>=2)acts.push(tb('Torna più facile',()=>{T.step=step-1;prompt()}));acts.push(tb('Riascolta',()=>attempt(0,ph)));
+  teachUI(pctv+'%: ci siamo quasi',step===3?'Senza guida è ancora difficile. Riprova, oppure torna un passo indietro con la guida.':'Serve almeno il '+need+'%: riascolta la frase e riprova seguendo bene le barre blu.',acts,res)}}
+function nextPhrase(){if(T.i<T.phr.length-1)selectPhrase(T.i+1);else wholeSong()}
+function joinPrev(){const a=T.phr[T.i-1],b=T.phr[T.i];T.join=true;T.ph={idx:a.idx.concat(b.idx),start:a.start,end:b.end,ns:a.ns.concat(b.ns),text:a.text+' / '+b.text};
+ teachUI('Unisci le frasi '+T.i+' e '+(T.i+1),'Canta le due frasi una dopo l\'altra, da solo. Respira nel segno verde tra le due.',[tb('Canta le due frasi',()=>attempt(3),true),tb('Salta',nextPhrase)])}
+function wholeSong(){T.join=true;const P=T.phr;T.ph={idx:[],start:P[0].start,end:P[P.length-1].end,ns:P.flatMap(p=>p.ns),text:''};
+ teachUI('Tutta la canzone','Ora canta tutta la canzone da solo, sulla base. Respira nei segni verdi.',[tb('Canta tutta la canzone',()=>attempt(3),true),tb('Torna alle frasi',()=>selectPhrase(0))])}
+$('tDown').onclick=()=>{if(T.busy)return;mp.tr=Math.max(-12,mp.tr-1);applyTr();$('tTr').textContent=(mp.tr>0?'+':'')+mp.tr;refreshTeach()};
+$('tUp').onclick=()=>{if(T.busy)return;mp.tr=Math.min(12,mp.tr+1);applyTr();$('tTr').textContent=(mp.tr>0?'+':'')+mp.tr;refreshTeach()};
+function refreshTeach(){const i=T.i;buildPhrases();calcBreaths();if(T.phr.length){T.i=Math.min(i,T.phr.length-1);T.ph=T.phr[T.i]}prompt()}
+function startTeach(){T.on=true;T.key=args.song_key_learn||args.title||'';buildPhrases();calcBreaths();
+ const st=tState();let first=T.phr.findIndex((_,i)=>!(st[i]&&st[i].ok));if(first<0)first=0;if(T.phr.length)selectPhrase(first);else prompt()}
 
 // ---------- sincronizzazione ----------
 function renderSync(){const L=$('syList');L.replaceChildren();
@@ -399,6 +546,10 @@ window.addEventListener('message',e=>{const d=e.data;if(!d||d.type!=='streamlit:
  applyTr();
  args=a;
  if(linesChanged){lines=newLines;if(mode==='sync'&&changed)setMode('sing');else if(mode==='sing')renderLyricsStatic();else renderSync()}
+ calcBreaths();
+ const teach=a.mode==='teach'&&src==='midi';document.querySelector('.card').classList.toggle('teachmode',teach);
+ $('teach').hidden=!teach;if(teach){$('midiBox').hidden=true;document.querySelector('.eyebrow').textContent='Impara la canzone'}
+ if(teach&&(changed||!T.on))startTeach();else if(!teach)T.on=false;
  if(src==='yt'&&a.video_id&&a.video_id!==videoId){videoId=a.video_id;resetStats();
   if(player&&playerReady){player.cueVideoById(videoId)}else loadYT()}
  setHeight()});
@@ -410,11 +561,13 @@ function loop(){readMic();const tn=performance.now()/1000;trail.push({t:tn,m:cur
  if(mode==='sing'){const t=now()+offset;updateLyrics(t);
   if(playing()){
    if(vtrail.length&&vtrail[vtrail.length-1].t>t+.5)vtrail=[];vtrail.push({t,m:cur});while(vtrail.length&&vtrail[0].t<t-3)vtrail.shift();
-   if(notes.length){const tn=notes.find(n=>t>=n.start+.1&&t<n.start+n.dur);if(tn){stats.nFr++;if(cur!==null&&Math.abs(fold(cur,tn.midi))<.5)stats.nOk++}}
+   if(notes.length&&(!T.on||(T.cur&&t>=T.cur.start-.05&&t<=T.cur.end))){const tn=notes.find(n=>t>=n.start+.1&&t<n.start+n.dur);
+    if(tn){stats.nFr++;const p=stats.pn[tn.start]||(stats.pn[tn.start]={n:tn,fr:0,ok:0});p.fr++;
+     if(cur!==null){stats.nV++;const dv=fold(cur,tn.midi);stats.dev+=dv;stats.dn++;if(Math.abs(dv)<.5){stats.nOk++;p.ok++}}}}
    if(cur!==null){stats.voiced++;if(Math.abs(cur-Math.round(cur))<=.25)stats.tuned++}
    if(synced()){const i=lineIndexAt(t);if(i>=0&&t<lineEnd(i)){const p=stats.per[i]||(stats.per[i]={fr:0,v:0});p.fr++;if(cur!==null)p.v++}}
    if(++frameN%15===0)updateStats()}}
- if(mode==='sing')drawLane(now()+offset);drawTrail();mpUI();requestAnimationFrame(loop)}
+ if(mode==='sing'){drawLane(now()+offset);breathCue(now()+offset)}drawTrail();mpUI();requestAnimationFrame(loop)}
 renderLyricsStatic();requestAnimationFrame(loop);
 </script>
 </body>
