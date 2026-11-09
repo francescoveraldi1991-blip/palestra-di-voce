@@ -319,7 +319,11 @@ function showSummary(){
  const b=document.createElement('div');b.innerHTML='<b class="big">'+tune+'%</b> <span class="muted">intonazione</span>'+(pres!==null?'  ·  <b class="big">'+pres+'%</b> <span class="muted">presenza</span>':'')+(nts!==null?'  ·  <b class="big">'+nts+'%</b> <span class="muted">note giuste</span>':'');
  const p=document.createElement('div');p.textContent=msg;const n=document.createElement('div');n.className='small muted';
  n.textContent='L\'intonazione misura quanto la tua voce resta centrata su una nota, non se è la nota esatta della canzone: per quello usa la melodia guidata in «Le mie canzoni».';
- s.append(h,b,p,n);s.hidden=false}
+ s.append(h,b,p,n);s.hidden=false;
+ // salva il risultato per la pagina dei progressi
+ try{const log=JSON.parse(localStorage.getItem('pdv.progress')||'[]');
+  log.push({d:Date.now(),k:'karaoke',id:args.title||'',name:args.title||'',pct:nts!==null?nts:tune});
+  localStorage.setItem('pdv.progress',JSON.stringify(log.slice(-2000)))}catch(e){}}
 
 // ---------- disegno della voce ----------
 function drawTrail(){const cv=$('cv'),d=devicePixelRatio||1,W=cv.clientWidth,H=cv.clientHeight;if(!W)return;
